@@ -1,0 +1,253 @@
+{
+  "name": "Literature Survey Generation Workflow - Supervisor Design",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "survey-workflow",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Input (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "literature-survey-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and validate input\nconst body = $input.item.json.body || $input.item.json;\nconst topic = body.topic;\nconst executionId = body.executionId;\n\nif (!topic || !executionId) {\n  throw new Error('Missing required fields: topic and executionId');\n}\n\nreturn {\n  json: {\n    topic,\n    executionId,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "init-node",
+      "name": "Initialize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4",
+        "text": "=Generate 5-10 specific academic search queries for the research topic: {{ $json.topic }}\n\nInclude:\n- Key terminology and concepts\n- Synonyms and related terms\n- Specific research areas\n\nReturn ONLY a JSON array of query strings.\nExample: [\"query 1\", \"query 2\", \"query 3\"]",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        }
+      },
+      "id": "llm1-node",
+      "name": "LLM 1 (Query Generation)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [650, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{$credentials.openAiApi}}",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4",
+        "text": "=You are a research orchestrator. Analyze these search queries and retrieve relevant academic papers.\n\nTopic: {{ $json.topic }}\nQueries: {{ $json.queries }}\n\nFor each query, search academic databases and return:\n1. Paper titles\n2. Authors\n3. Abstracts\n4. Publication year\n5. Citation count\n6. Quality score (0-100)\n\nReturn JSON format:\n{\n  \"papers\": [\n    {\n      \"title\": \"...\",\n      \"authors\": [\"...\"],\n      \"abstract\": \"...\",\n      \"year\": 2024,\n      \"citations\": 50,\n      \"qualityScore\": 85\n    }\n  ]\n}",
+        "options": {
+          "temperature": 0.5,
+          "maxTokens": 3000
+        }
+      },
+      "id": "llm2-node",
+      "name": "LLM 2 (Query Orchestration)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{$credentials.openAiApi}}",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse LLM1 response\nconst message = $input.item.json.message;\nconst content = message?.content || message || '';\nlet queries;\n\ntry {\n  queries = JSON.parse(content);\n  if (!Array.isArray(queries)) {\n    queries = [content];\n  }\n} catch (e) {\n  queries = [$input.first().json.topic];\n}\n\nreturn {\n  json: {\n    topic: $input.first().json.topic,\n    executionId: $input.first().json.executionId,\n    queries: queries\n  }\n};"
+      },
+      "id": "parse-llm1-node",
+      "name": "Parse LLM1 Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse LLM2 response and extract papers\nconst message = $input.item.json.message;\nconst content = message?.content || message || '';\nlet result;\n\ntry {\n  result = JSON.parse(content);\n} catch (e) {\n  result = { papers: [] };\n}\n\nconst papers = result.papers || [];\n\n// Calculate average quality score\nconst avgQuality = papers.length > 0 \n  ? papers.reduce((sum, p) => sum + (p.qualityScore || 0), 0) / papers.length\n  : 0;\n\nreturn {\n  json: {\n    topic: $input.first().json.topic,\n    executionId: $input.first().json.executionId,\n    papers: papers,\n    averageQuality: avgQuality,\n    passesThreshold: avgQuality > 75\n  }\n};"
+      },
+      "id": "parse-llm2-node",
+      "name": "Parse LLM2 & Check Quality",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.passesThreshold }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "quality-check-node",
+      "name": "Quality Check (x > 75?)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4",
+        "text": "=Create a comprehensive literature survey on: {{ $json.topic }}\n\nUsing these high-quality papers:\n{{ JSON.stringify($json.papers, null, 2) }}\n\nStructure:\n1. Introduction\n2. Main themes and findings\n3. Critical analysis\n4. Research gaps\n5. Conclusion\n\nReturn JSON:\n{\n  \"introduction\": \"...\",\n  \"mainContent\": \"...\",\n  \"analysis\": \"...\",\n  \"gaps\": \"...\",\n  \"conclusion\": \"...\"\n}",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 4000
+        }
+      },
+      "id": "llm3-node",
+      "name": "LLM 3 (High Quality Survey)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [1450, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{$credentials.openAiApi}}",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-3.5-turbo",
+        "text": "=Refine and improve this literature survey:\n\n{{ JSON.stringify($json.survey, null, 2) }}\n\nMake it more:\n- Coherent and well-structured\n- Academic in tone\n- Clear and concise\n\nReturn the improved survey in the same JSON format.",
+        "options": {
+          "temperature": 0.5,
+          "maxTokens": 2000
+        }
+      },
+      "id": "prompt-refine-node",
+      "name": "Prompt (Refine Survey)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [1650, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{$credentials.openAiApi}}",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format final survey from LLM3 + Prompt\nconst message = $input.item.json.message;\nconst content = message?.content || message || '';\nlet survey;\n\ntry {\n  survey = JSON.parse(content);\n} catch (e) {\n  survey = {\n    introduction: 'Survey generation in progress...',\n    mainContent: '',\n    conclusion: ''\n  };\n}\n\nconst papers = $input.first().json.papers || [];\nconst references = papers.map(p => ({\n  title: p.title,\n  authors: p.authors,\n  year: p.year\n}));\n\nreturn {\n  json: {\n    executionId: $input.first().json.executionId,\n    topic: $input.first().json.topic,\n    content: survey,\n    references: references,\n    metadata: {\n      paperCount: papers.length,\n      averageQuality: $input.first().json.averageQuality,\n      generatedAt: new Date().toISOString(),\n      qualityTier: 'high'\n    }\n  }\n};"
+      },
+      "id": "format-high-quality-node",
+      "name": "Format High Quality Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Create basic survey for lower quality papers\nconst papers = $json.papers || [];\nconst topic = $json.topic;\n\nconst basicSurvey = {\n  introduction: `This is a literature survey on ${topic}. Based on available research papers, we present the following findings.`,\n  mainContent: papers.map(p => `${p.title} (${p.year}): ${p.abstract}`).join('\\n\\n'),\n  conclusion: 'Further research is needed in this area to provide more comprehensive insights.'\n};\n\nconst references = papers.map(p => ({\n  title: p.title,\n  authors: p.authors,\n  year: p.year\n}));\n\nreturn {\n  json: {\n    executionId: $json.executionId,\n    topic: $json.topic,\n    content: basicSurvey,\n    references: references,\n    metadata: {\n      paperCount: papers.length,\n      averageQuality: $json.averageQuality,\n      generatedAt: new Date().toISOString(),\n      qualityTier: 'standard'\n    }\n  }\n};"
+      },
+      "id": "format-standard-node",
+      "name": "Result & Survey (Standard Quality)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3000/api/surveys/{{ $json.executionId }}/complete",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ JSON.stringify($json.content) }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify($json.metadata) }}"
+            },
+            {
+              "name": "references",
+              "value": "={{ JSON.stringify($json.references) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "store-node",
+      "name": "Store in Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "Input (Webhook)": {
+      "main": [[{ "node": "Initialize", "type": "main", "index": 0 }]]
+    },
+    "Initialize": {
+      "main": [[{ "node": "LLM 1 (Query Generation)", "type": "main", "index": 0 }]]
+    },
+    "LLM 1 (Query Generation)": {
+      "main": [[{ "node": "Parse LLM1 Result", "type": "main", "index": 0 }]]
+    },
+    "Parse LLM1 Result": {
+      "main": [[{ "node": "LLM 2 (Query Orchestration)", "type": "main", "index": 0 }]]
+    },
+    "LLM 2 (Query Orchestration)": {
+      "main": [[{ "node": "Parse LLM2 & Check Quality", "type": "main", "index": 0 }]]
+    },
+    "Parse LLM2 & Check Quality": {
+      "main": [[{ "node": "Quality Check (x > 75?)", "type": "main", "index": 0 }]]
+    },
+    "Quality Check (x > 75?)": {
+      "main": [
+        [{ "node": "LLM 3 (High Quality Survey)", "type": "main", "index": 0 }],
+        [{ "node": "Result & Survey (Standard Quality)", "type": "main", "index": 0 }]
+      ]
+    },
+    "LLM 3 (High Quality Survey)": {
+      "main": [[{ "node": "Prompt (Refine Survey)", "type": "main", "index": 0 }]]
+    },
+    "Prompt (Refine Survey)": {
+      "main": [[{ "node": "Format High Quality Result", "type": "main", "index": 0 }]]
+    },
+    "Format High Quality Result": {
+      "main": [[{ "node": "Store in Database", "type": "main", "index": 0 }]]
+    },
+    "Result & Survey (Standard Quality)": {
+      "main": [[{ "node": "Store in Database", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-03-20T00:00:00.000Z",
+  "versionId": "2"
+}
