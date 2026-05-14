@@ -1,8 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 
-/**
- * Request logging middleware
- */
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
 

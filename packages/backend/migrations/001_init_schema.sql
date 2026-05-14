@@ -12,6 +12,7 @@ CREATE TABLE workflow_executions (
   status VARCHAR(50) NOT NULL CHECK (status IN (
     'initiated',
     'query_expansion',
+    'retrieval',
     'validation',
     'evaluation',
     'synthesis',
@@ -90,7 +91,7 @@ COMMENT ON TABLE workflow_executions IS 'Stores workflow execution state and pro
 COMMENT ON TABLE papers IS 'Intermediate storage for retrieved and evaluated papers';
 COMMENT ON TABLE surveys IS 'Final generated literature surveys';
 
-COMMENT ON COLUMN workflow_executions.status IS 'Current workflow status: initiated, query_expansion, validation, evaluation, synthesis, complete, error';
+COMMENT ON COLUMN workflow_executions.status IS 'Current workflow status: initiated, query_expansion, retrieval, validation, evaluation, synthesis, complete, error';
 COMMENT ON COLUMN workflow_executions.progress IS 'Progress percentage (0-100)';
 COMMENT ON COLUMN workflow_executions.options IS 'User-provided options: maxPapers, minCitationCount, yearRange';
 COMMENT ON COLUMN workflow_executions.error IS 'Error details if workflow fails: stage, message, retryable, timestamp';

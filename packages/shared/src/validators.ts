@@ -7,18 +7,12 @@ import {
 } from './validation';
 import { ZodError } from 'zod';
 
-/**
- * Validation result type
- */
 export interface ValidationResult<T> {
   success: boolean;
   data?: T;
   errors?: string[];
 }
 
-/**
- * Format Zod errors into readable messages
- */
 const formatZodErrors = (error: ZodError): string[] => {
   return error.errors.map((err) => {
     const path = err.path.join('.');
@@ -26,10 +20,6 @@ const formatZodErrors = (error: ZodError): string[] => {
   });
 };
 
-/**
- * Validate paper metadata completeness
- * Ensures all required fields are present and valid
- */
 export const validatePaperMetadata = (paper: unknown): ValidationResult<Paper> => {
   try {
     const validatedPaper = PaperSchema.parse(paper);
@@ -51,10 +41,6 @@ export const validatePaperMetadata = (paper: unknown): ValidationResult<Paper> =
   }
 };
 
-/**
- * Validate survey structure
- * Ensures survey has all required sections and proper format
- */
 export const validateSurveyStructure = (survey: unknown): ValidationResult<Survey> => {
   try {
     const validatedSurvey = SurveySchema.parse(survey);
@@ -105,10 +91,6 @@ export const validateSurveyStructure = (survey: unknown): ValidationResult<Surve
   }
 };
 
-/**
- * Validate workflow options
- * Ensures options are within acceptable ranges
- */
 export const validateWorkflowOptionsData = (
   options: unknown
 ): ValidationResult<WorkflowOptions> => {
@@ -132,10 +114,6 @@ export const validateWorkflowOptionsData = (
   }
 };
 
-/**
- * Validate create survey request
- * Ensures topic and options are valid
- */
 export const validateCreateSurveyRequestData = (data: unknown): ValidationResult<{
   topic: string;
   options?: WorkflowOptions;
@@ -160,9 +138,6 @@ export const validateCreateSurveyRequestData = (data: unknown): ValidationResult
   }
 };
 
-/**
- * Check if paper has all required metadata fields
- */
 export const hasPaperMetadataComplete = (paper: Partial<Paper>): boolean => {
   const requiredFields: (keyof Paper)[] = [
     'title',
@@ -181,9 +156,6 @@ export const hasPaperMetadataComplete = (paper: Partial<Paper>): boolean => {
   });
 };
 
-/**
- * Check if survey has complete structure
- */
 export const hasSurveyCompleteStructure = (survey: Partial<Survey>): boolean => {
   if (!survey.content) return false;
 

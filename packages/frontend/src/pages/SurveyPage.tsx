@@ -1,34 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-
-interface Survey {
-  id: string;
-  topic: string;
-  content: {
-    introduction: string;
-    sections: Array<{
-      title: string;
-      content: string;
-    }>;
-    conclusion: string;
-    references: Array<{
-      authors: string[];
-      year: number;
-      title: string;
-      venue: string;
-    }>;
-  };
-  metadata: {
-    paperCount: number;
-    wordCount: number;
-    generatedAt: string;
-  };
-}
+import { apiClient, Survey } from '../api/client';
 
 export default function SurveyPage() {
   const { surveyId } = useParams<{ surveyId: string }>();
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
 
@@ -37,13 +15,7 @@ export default function SurveyPage() {
 
     const fetchSurvey = async () => {
       try {
-        const response = await fetch(`http://localhost:3000/api/surveys/${surveyId}`);
-        
-        if (!response.ok) {
-          throw new Error('Survey not found');
-        }
-
-        const data = await response.json();
+        const data = await apiClient.getSurvey(surveyId);
         setSurvey(data.survey);
       } catch (err) {
         setError('Failed to load survey');
@@ -61,24 +33,13 @@ export default function SurveyPage() {
 
     setExporting(true);
     try {
-      const response = await fetch(`http://localhost:3000/api/surveys/${surveyId}/export`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ format }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Export failed');
-      }
-
-      // Download file
-      const blob = await response.blob();
+      const blob = await apiClient.exportSurvey(surveyId, format);
+      const downloadName =
+        format === 'json' ? `survey-${surveyId}.json` : `survey-${surveyId}.txt`;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `survey-${surveyId}.${format}`;
+      a.download = downloadName;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -158,7 +119,7 @@ export default function SurveyPage() {
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
               </svg>
-              Export PDF
+              Export as Text (PDF)
             </button>
             <button
               onClick={() => handleExport('docx')}
@@ -168,7 +129,7 @@ export default function SurveyPage() {
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
               </svg>
-              Export DOCX
+              Export as Text (DOCX)
             </button>
             <button
               onClick={() => handleExport('json')}
@@ -182,7 +143,7 @@ export default function SurveyPage() {
             </button>
           </div>
           <p className="text-sm text-gray-400 italic">
-            Note: PDF and DOCX exports download as text files in demo mode. JSON export provides full structured data.
+            Note: PDF / DOCX buttons currently download a plain-text file. JSON export provides full structured data.
           </p>
         </div>
       </div>
@@ -197,49 +158,100 @@ export default function SurveyPage() {
             Research Papers
           </h2>
           <p className="text-gray-400 mb-6">
-            {survey.metadata.paperCount} papers analyzed for this literature survey
+            {survey.metadata.paperCount} top-ranked papers · click any card to expand details
           </p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {survey.content.references.map((paper, index) => (
-              <div
-                key={index}
-                className="bg-[rgb(var(--color-bg-primary))] border border-[rgb(var(--color-border))] rounded-lg p-5 hover:border-[rgb(var(--color-primary))] hover:scale-105 transition-all duration-300"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-xs font-semibold text-[rgb(var(--color-primary))] bg-[rgb(var(--color-primary))]/10 px-2 py-1 rounded">
-                    Paper {index + 1}
-                  </span>
-                  <span className="text-xs text-gray-400">{paper.year}</span>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {survey.content.references.map((paper, index) => {
+              const expanded = expandedCards.has(index);
+              const hasAuthors = paper.authors.length > 0 && paper.authors[0] !== 'Unknown';
+              const toggleExpand = () =>
+                setExpandedCards(prev => {
+                  const next = new Set(prev);
+                  next.has(index) ? next.delete(index) : next.add(index);
+                  return next;
+                });
+
+              return (
+                <div
+                  key={index}
+                  className={`bg-[rgb(var(--color-bg-primary))] border rounded-lg p-5 transition-all duration-300 cursor-pointer ${
+                    expanded
+                      ? 'border-[rgb(var(--color-primary))] shadow-lg shadow-[rgb(var(--color-primary))]/10'
+                      : 'border-[rgb(var(--color-border))] hover:border-[rgb(var(--color-primary))]/60'
+                  }`}
+                  onClick={toggleExpand}
+                >
+                  {/* Header row */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[rgb(var(--color-primary))] bg-[rgb(var(--color-primary))]/10 px-2 py-1 rounded">
+                        #{index + 1}
+                      </span>
+                      <span className="text-xs text-gray-500">{paper.year}</span>
+                    </div>
+                    <span className="text-gray-500 text-xs select-none">{expanded ? '▲ less' : '▼ more'}</span>
+                  </div>
+
+                  {/* Title */}
+                  <h3 className={`text-sm font-bold text-white mb-2 ${expanded ? '' : 'line-clamp-2'}`}>
+                    {paper.title}
+                  </h3>
+
+                  {/* Authors + Venue */}
+                  <div className="space-y-1 mb-3">
+                    {hasAuthors && (
+                      <p className="text-xs text-gray-400">
+                        <span className="font-semibold text-gray-300">Authors:</span>{' '}
+                        {paper.authors.slice(0, expanded ? undefined : 3).join(', ')}
+                        {!expanded && paper.authors.length > 3 && ` +${paper.authors.length - 3} more`}
+                      </p>
+                    )}
+                    {paper.venue && paper.venue !== 'Online' && (
+                      <p className="text-xs text-gray-400">
+                        <span className="font-semibold text-gray-300">Venue:</span>{' '}
+                        <span className="text-[rgb(var(--color-primary))]/80">{paper.venue}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Reason for selection — always visible */}
+                  {paper.reasonForSelection && (
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-md p-3 mb-3">
+                      <p className="text-xs text-green-300 font-semibold mb-1">Why selected</p>
+                      <p className={`text-xs text-green-200/80 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>
+                        {paper.reasonForSelection}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Abstract — only when expanded */}
+                  {expanded && paper.abstract && (
+                    <div className="bg-[rgb(var(--color-border))]/30 rounded-md p-3 mb-3">
+                      <p className="text-xs text-gray-400 font-semibold mb-1">Abstract</p>
+                      <p className="text-xs text-gray-300 leading-relaxed">{paper.abstract}</p>
+                    </div>
+                  )}
+
+                  {/* URL */}
+                  {paper.url && (
+                    <a
+                      href={paper.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-xs text-[rgb(var(--color-primary))] hover:text-[rgb(var(--color-accent))] font-medium transition-colors mt-1"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                        <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                      </svg>
+                      View Paper
+                    </a>
+                  )}
                 </div>
-                
-                <h3 className="text-sm font-bold text-white mb-2 line-clamp-2">
-                  {paper.title}
-                </h3>
-                
-                <div className="space-y-2 mb-3">
-                  <p className="text-xs text-gray-400">
-                    <span className="font-semibold text-gray-300">Authors:</span>{' '}
-                    {paper.authors.slice(0, 2).join(', ')}
-                    {paper.authors.length > 2 && ` +${paper.authors.length - 2} more`}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    <span className="font-semibold text-gray-300">Venue:</span> {paper.venue}
-                  </p>
-                </div>
-                
-                {paper.url && (
-                  <a
-                    href={paper.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-[rgb(var(--color-primary))] hover:text-[rgb(var(--color-accent))] font-medium transition-colors"
-                  >
-                    View Paper →
-                  </a>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -269,10 +281,24 @@ export default function SurveyPage() {
         {/* References */}
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">References</h2>
-          <ol className="list-decimal list-inside space-y-2">
+          <ol className="list-decimal list-inside space-y-3">
             {survey.content.references.map((ref, index) => (
-              <li key={index} className="text-gray-300 text-sm">
-                {ref.authors.join(', ')} ({ref.year}). <em>{ref.title}</em>. {ref.venue}.
+              <li key={index} className="text-gray-300 text-sm leading-relaxed">
+                {ref.authors.filter(a => a !== 'Unknown').join(', ')}{ref.authors.filter(a => a !== 'Unknown').length > 0 ? ' ' : ''}
+                ({ref.year}). <em>{ref.title}</em>.{ref.venue && ref.venue !== 'Online' ? ` ${ref.venue}.` : ''}
+                {ref.url && (
+                  <>
+                    {' '}
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[rgb(var(--color-primary))] hover:underline break-all"
+                    >
+                      {ref.url}
+                    </a>
+                  </>
+                )}
               </li>
             ))}
           </ol>

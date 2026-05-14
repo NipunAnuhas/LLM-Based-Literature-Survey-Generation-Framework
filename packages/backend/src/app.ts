@@ -3,6 +3,7 @@ import cors from 'cors';
 import { requestLogger } from './middleware/logger';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import surveysRouter from './routes/surveys';
+import workflowRouter from './routes/workflow';
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.get('/', (req, res) => {
 
 // API routes
 app.use('/api/surveys', surveysRouter);
+app.use('/api/workflow', workflowRouter);
 
 // 404 handler
 app.use(notFoundHandler);

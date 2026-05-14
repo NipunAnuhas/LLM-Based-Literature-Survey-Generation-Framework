@@ -18,6 +18,10 @@ export const config = {
     url: process.env.N8N_URL || 'http://localhost:5678',
     apiKey: process.env.N8N_API_KEY || '',
     webhookUrl: process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/survey-workflow',
+    completionMode:
+      (process.env.N8N_COMPLETION_MODE || 'sync').toLowerCase() === 'callback'
+        ? 'callback'
+        : 'sync',
   },
   llm: {
     openaiApiKey: process.env.OPENAI_API_KEY || '',

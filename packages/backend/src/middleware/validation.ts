@@ -1,23 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
-import { validateCreateSurveyRequest } from 'shared';
+import { ZodSchema } from 'zod';
 
-/**
- * Validate request body against a schema
- */
-export const validateBody = (schema: any) => {
+export const validateBody = <T>(schema: ZodSchema<T>) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    try {
-      req.body = schema.parse(req.body);
-      next();
-    } catch (error) {
-      next(error);
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request body failed validation',
+          details: result.error.errors.map((err) => ({
+            path: err.path.join('.'),
+            message: err.message,
+          })),
+          retryable: false,
+          timestamp: new Date().toISOString(),
+        },
+      });
     }
+    req.body = result.data;
+    next();
   };
 };
 
-/**
- * Validate UUID parameter
- */
 export const validateUUID = (paramName: string) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const uuid = req.params[paramName];
@@ -37,4 +42,27 @@ export const validateUUID = (paramName: string) => {
 
     next();
   };
+};
+
+export const requireCallbackSecret = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const expected = process.env.N8N_CALLBACK_SECRET;
+  if (!expected) {
+    return next();
+  }
+  const provided = req.header('x-n8n-secret');
+  if (provided !== expected) {
+    return res.status(401).json({
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Missing or invalid X-N8N-Secret header',
+        retryable: false,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+  next();
 };

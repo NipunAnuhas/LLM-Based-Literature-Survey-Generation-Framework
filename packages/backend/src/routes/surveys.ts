@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { validateBody, validateUUID } from '../middleware/validation';
+import {
+  validateBody,
+  validateUUID,
+  requireCallbackSecret,
+} from '../middleware/validation';
 import { CreateSurveyRequestSchema } from 'shared';
 import * as surveyController from '../controllers/surveyController';
 
@@ -13,9 +17,11 @@ router.post(
   asyncHandler(surveyController.createSurvey)
 );
 
-// POST /api/surveys/:executionId/complete - Complete survey (called by n8n)
+// POST /api/surveys/:executionId/complete - Legacy async-callback endpoint.
+// Sync mode does not use this; secured for the dormant async path.
 router.post(
   '/:executionId/complete',
+  requireCallbackSecret,
   validateUUID('executionId'),
   asyncHandler(surveyController.completeSurvey)
 );

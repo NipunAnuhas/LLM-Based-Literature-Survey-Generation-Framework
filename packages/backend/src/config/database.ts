@@ -5,7 +5,7 @@ dotenv.config();
 
 const poolConfig: PoolConfig = {
   host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
+  port: parseInt(process.env.DB_PORT || '5436', 10),
   database: process.env.DB_NAME || 'literature_survey',
   user: process.env.DB_USER || 'litsurvey',
   password: process.env.DB_PASSWORD || 'litsurvey_dev_password',
@@ -17,15 +17,12 @@ const poolConfig: PoolConfig = {
 // Create connection pool
 const pool = new Pool(poolConfig);
 
-// Handle pool errors
+// Log pool-level errors but never crash the process — the backend is
+// designed to fall back to demo mode when Postgres is unreachable.
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  console.error('Postgres pool error (continuing):', err.message);
 });
 
-/**
- * Execute a query against the database
- */
 export const query = async (text: string, params?: any[]) => {
   const start = Date.now();
   try {
@@ -39,9 +36,6 @@ export const query = async (text: string, params?: any[]) => {
   }
 };
 
-/**
- * Get a client from the pool for transactions
- */
 export const getClient = async () => {
   const client = await pool.connect();
   const originalQuery = client.query.bind(client);
@@ -72,9 +66,6 @@ export const getClient = async () => {
   return client;
 };
 
-/**
- * Check database connection health
- */
 export const healthCheck = async (): Promise<boolean> => {
   try {
     const result = await pool.query('SELECT NOW()');
@@ -86,9 +77,6 @@ export const healthCheck = async (): Promise<boolean> => {
   }
 };
 
-/**
- * Gracefully close all connections
- */
 export const closePool = async (): Promise<void> => {
   try {
     await pool.end();

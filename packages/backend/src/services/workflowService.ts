@@ -1,9 +1,6 @@
 import { query } from '../config/database';
 import { WorkflowExecution, WorkflowOptions, WorkflowStatus } from 'shared';
 
-/**
- * Create a new workflow execution
- */
 export const createWorkflowExecution = async (
   topic: string,
   options: WorkflowOptions = {}
@@ -19,9 +16,6 @@ export const createWorkflowExecution = async (
   return mapRowToWorkflowExecution(row);
 };
 
-/**
- * Get workflow execution by ID
- */
 export const getWorkflowExecution = async (
   executionId: string
 ): Promise<WorkflowExecution | null> => {
@@ -37,9 +31,6 @@ export const getWorkflowExecution = async (
   return mapRowToWorkflowExecution(result.rows[0]);
 };
 
-/**
- * Update workflow execution status
- */
 export const updateWorkflowStatus = async (
   executionId: string,
   status: WorkflowStatus,
@@ -64,9 +55,6 @@ export const updateWorkflowStatus = async (
   return mapRowToWorkflowExecution(result.rows[0]);
 };
 
-/**
- * Update workflow error
- */
 export const updateWorkflowError = async (
   executionId: string,
   error: {
@@ -83,9 +71,6 @@ export const updateWorkflowError = async (
   );
 };
 
-/**
- * Map database row to WorkflowExecution object
- */
 function mapRowToWorkflowExecution(row: any): WorkflowExecution {
   return {
     id: row.id,

@@ -14,7 +14,7 @@ export interface Paper {
   publicationYear: number;
   citationCount: number;
   venue: string;
-  url: string;
+  url?: string;
   qualityScore?: number; // 0-10
   relevanceScore?: number; // 0-10
   themes?: string[];
@@ -26,6 +26,8 @@ export interface Reference {
   title: string;
   venue: string;
   url?: string;
+  abstract?: string;
+  reasonForSelection?: string;
 }
 
 export interface SurveySection {
@@ -55,6 +57,7 @@ export interface Survey {
 export type WorkflowStatus =
   | 'initiated'
   | 'query_expansion'
+  | 'retrieval'
   | 'validation'
   | 'evaluation'
   | 'synthesis'
@@ -149,10 +152,32 @@ export interface GetStatusResponse {
   currentStage?: PipelineStage;
   progress: number;
   message: string;
+  surveyId?: string;
   error?: {
     stage: string;
     message: string;
     retryable: boolean;
+  };
+}
+
+export interface WorkflowProgressRequest {
+  executionId: string;
+  stage: PipelineStage | string;
+  progress: number;
+  message: string;
+}
+
+export interface WorkflowCallbackRequest {
+  executionId: string;
+  status: WorkflowStatus;
+  survey?: {
+    content: Survey['content'];
+    metadata: Omit<Survey['metadata'], 'generatedAt'> & { generatedAt: string | Date };
+  };
+  error?: {
+    stage: string;
+    message: string;
+    retryable?: boolean;
   };
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiClient } from '../api/client';
 
 export default function HomePage() {
   const [topic, setTopic] = useState('');
@@ -23,15 +24,7 @@ export default function HomePage() {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/api/surveys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.trim() }),
-      });
-
-      if (!response.ok) throw new Error('Failed to create survey');
-
-      const data = await response.json();
+      const data = await apiClient.createSurvey({ topic: topic.trim() });
       navigate(`/progress/${data.executionId}`);
     } catch (error) {
       console.error('Error:', error);

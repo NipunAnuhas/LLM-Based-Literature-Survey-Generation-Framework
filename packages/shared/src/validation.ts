@@ -20,7 +20,7 @@ export const PaperSchema = z.object({
     .max(new Date().getFullYear(), 'Publication year cannot be in the future'),
   citationCount: z.number().int().min(0, 'Citation count must be non-negative'),
   venue: z.string().min(1),
-  url: z.string().url(),
+  url: z.string().url().optional(),
   qualityScore: z.number().min(0).max(10).optional(),
   relevanceScore: z.number().min(0).max(10).optional(),
   themes: z.array(z.string()).optional(),
@@ -29,10 +29,12 @@ export const PaperSchema = z.object({
 // Reference schema
 export const ReferenceSchema = z.object({
   authors: z.array(z.string()).min(1),
-  year: z.number().int().min(1900).max(new Date().getFullYear()),
+  year: z.number().int().min(1900).max(new Date().getFullYear() + 1),
   title: z.string().min(1),
   venue: z.string().min(1),
   url: z.string().url().optional(),
+  abstract: z.string().optional(),
+  reasonForSelection: z.string().optional(),
 });
 
 // Survey section schema
@@ -89,6 +91,64 @@ export const CreateSurveyRequestSchema = z.object({
 export const ExportRequestSchema = z.object({
   surveyId: z.string().uuid('Invalid survey ID'),
   format: z.enum(['pdf', 'docx', 'json']),
+});
+
+// Pipeline stage values accepted from the n8n workflow (string for forward-compat).
+const PipelineStageSchema = z.union([
+  z.enum(['query_expansion', 'retrieval', 'validation', 'evaluation', 'synthesis']),
+  z.string().min(1).max(50),
+]);
+
+// Workflow progress callback (from n8n -> backend)
+export const WorkflowProgressRequestSchema = z.object({
+  executionId: z.string().uuid('Invalid execution ID'),
+  stage: PipelineStageSchema,
+  progress: z.number().min(-1).max(100),
+  message: z.string().min(1).max(500),
+});
+
+// Workflow completion callback (from n8n -> backend)
+export const WorkflowCallbackRequestSchema = z.object({
+  executionId: z.string().uuid('Invalid execution ID'),
+  status: z.enum([
+    'initiated',
+    'query_expansion',
+    'retrieval',
+    'validation',
+    'evaluation',
+    'synthesis',
+    'complete',
+    'error',
+  ]),
+  survey: z
+    .object({
+      content: z.object({
+        introduction: z.string(),
+        sections: z.array(
+          z.object({
+            title: z.string(),
+            content: z.string(),
+            paperIds: z.array(z.string()).default([]),
+          })
+        ),
+        conclusion: z.string(),
+        references: z.array(ReferenceSchema),
+      }),
+      metadata: z.object({
+        paperCount: z.number().int().min(0),
+        wordCount: z.number().int().min(0),
+        generatedAt: z.union([z.string(), z.date()]),
+        themes: z.array(z.string()),
+      }),
+    })
+    .optional(),
+  error: z
+    .object({
+      stage: z.string(),
+      message: z.string(),
+      retryable: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 // Validation helper functions

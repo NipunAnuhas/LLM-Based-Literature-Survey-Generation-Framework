@@ -1,9 +1,6 @@
 import { query } from '../config/database';
 import { Survey } from 'shared';
 
-/**
- * Get survey by ID
- */
 export const getSurveyById = async (surveyId: string): Promise<Survey | null> => {
   const result = await query(`SELECT * FROM surveys WHERE id = $1`, [surveyId]);
 
@@ -14,9 +11,6 @@ export const getSurveyById = async (surveyId: string): Promise<Survey | null> =>
   return mapRowToSurvey(result.rows[0]);
 };
 
-/**
- * Get survey by execution ID
- */
 export const getSurveyByExecutionId = async (
   executionId: string
 ): Promise<Survey | null> => {
@@ -29,9 +23,6 @@ export const getSurveyByExecutionId = async (
   return mapRowToSurvey(result.rows[0]);
 };
 
-/**
- * Create a new survey
- */
 export const createSurvey = async (
   executionId: string,
   topic: string,
@@ -48,9 +39,6 @@ export const createSurvey = async (
   return mapRowToSurvey(result.rows[0]);
 };
 
-/**
- * Map database row to Survey object
- */
 function mapRowToSurvey(row: any): Survey {
   return {
     id: row.id,

@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
@@ -13,9 +12,6 @@ build/
 .env
 .env.local
 .env.*.local
-
-# Credentials
-N8N_CREDENTIALS.txt
 
 # IDE
 .vscode/

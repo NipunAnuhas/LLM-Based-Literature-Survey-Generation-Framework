@@ -1,131 +1,127 @@
 import axios from 'axios';
+import { Survey, WorkflowOptions } from 'shared';
 import { config } from '../config';
 
 interface N8nWorkflowTriggerRequest {
   topic: string;
   executionId: string;
-  options?: {
-    maxPapers?: number;
-    minCitationCount?: number;
-    yearRange?: {
-      start: number;
-      end: number;
-    };
+  options?: WorkflowOptions;
+}
+
+export interface N8nSurveyPayload {
+  content: Survey['content'];
+  metadata: Omit<Survey['metadata'], 'generatedAt'> & {
+    generatedAt: string | Date;
   };
 }
 
-interface N8nWorkflowResponse {
-  success: boolean;
-  executionId?: string;
-  error?: string;
+export type N8nTriggerResult =
+  | { success: true; survey: N8nSurveyPayload }
+  | { success: true; deferred: true }
+  | { success: false; error: string };
+
+const N8N_TIMEOUT_MS = 5 * 60 * 1000;
+const N8N_ACK_TIMEOUT_MS = 90 * 1000;
+
+export function extractSurvey(raw: unknown): N8nSurveyPayload | null {
+  // Unwrap JSON strings (including double-encoded bodies from Respond to Webhook).
+  let body: any = raw;
+  for (let i = 0; i < 4; i++) {
+    if (typeof body !== 'string') break;
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!body || typeof body !== 'object') return null;
+
+  // Shape A — { content, metadata }
+  if (body.content?.introduction !== undefined && body.metadata?.generatedAt !== undefined) {
+    return body as N8nSurveyPayload;
+  }
+
+  // Shape B — { survey: { content, metadata } }
+  if (body.survey?.content?.introduction !== undefined) {
+    return body.survey as N8nSurveyPayload;
+  }
+
+  // Shape C — top-level item array from n8n (e.g. [{ json: { survey: ... } }])
+  if (Array.isArray(body) && body[0]?.json?.survey) {
+    return body[0].json.survey as N8nSurveyPayload;
+  }
+
+  return null;
 }
 
-/**
- * Trigger n8n workflow for survey generation
- */
 export const triggerWorkflow = async (
   data: N8nWorkflowTriggerRequest
-): Promise<N8nWorkflowResponse> => {
+): Promise<N8nTriggerResult> => {
+  const webhookUrl =
+    config.n8n.webhookUrl || `${config.n8n.url}/webhook/survey-workflow`;
+
+  const useCallbackCompletion = config.n8n.completionMode === 'callback';
+
+  console.log('Triggering n8n workflow:', {
+    url: webhookUrl,
+    executionId: data.executionId,
+    topic: data.topic,
+    completionMode: config.n8n.completionMode,
+  });
+
   try {
-    const webhookUrl = config.n8n.webhookUrl || `${config.n8n.url}/webhook/survey-workflow`;
-
-    console.log('Triggering n8n workflow:', {
-      url: webhookUrl,
-      executionId: data.executionId,
-      topic: data.topic,
-    });
-
     const response = await axios.post(webhookUrl, data, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000, // 10 second timeout for webhook trigger
+      headers: { 'Content-Type': 'application/json' },
+      timeout: useCallbackCompletion ? N8N_ACK_TIMEOUT_MS : N8N_TIMEOUT_MS,
+      responseType: 'text',
+      transformResponse: [(raw) => {
+        if (!raw || raw.trim() === '') return null;
+        try { return JSON.parse(raw); } catch { return raw; }
+      }],
     });
 
-    console.log('n8n workflow triggered successfully:', response.data);
+    console.log('n8n raw response type:', typeof response.data,
+      '| keys:', response.data && typeof response.data === 'object' && !Array.isArray(response.data)
+        ? Object.keys(response.data as object).join(', ')
+        : String(response.data).substring(0, 100));
 
-    return {
-      success: true,
-      executionId: data.executionId,
-    };
-  } catch (error: any) {
-    console.error('Failed to trigger n8n workflow:', error.message);
+    const survey = extractSurvey(response.data);
 
-    // Check if n8n is not available
-    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      console.warn('n8n service not available - workflow will not execute');
+    const ack =
+      response.data &&
+      typeof response.data === 'object' &&
+      (response.data as { accepted?: boolean }).accepted === true;
+
+    if (ack && !survey) {
+      if (useCallbackCompletion) {
+        console.log(
+          'n8n returned async ack; waiting for POST /api/surveys/:executionId/complete'
+        );
+        return { success: true, deferred: true };
+      }
       return {
         success: false,
-        error: 'n8n service not available',
+        error:
+          'n8n returned an async ack only. Set N8N_COMPLETION_MODE=callback on the backend, or remove the early Acknowledge step from the workflow for sync mode.',
       };
     }
 
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-};
-
-/**
- * Get n8n workflow execution status
- */
-export const getWorkflowExecutionStatus = async (
-  executionId: string
-): Promise<any> => {
-  try {
-    const apiUrl = `${config.n8n.url}/api/v1/executions/${executionId}`;
-    const apiKey = config.n8n.apiKey;
-
-    if (!apiKey) {
-      console.warn('n8n API key not configured');
-      return null;
+    if (!survey) {
+      console.error('n8n response shape not recognised:', JSON.stringify(response.data)?.substring(0, 300));
+      return {
+        success: false,
+        error: 'n8n response did not include a survey object with content + metadata',
+      };
     }
 
-    const response = await axios.get(apiUrl, {
-      headers: {
-        'X-N8N-API-KEY': apiKey,
-      },
-      timeout: 5000,
-    });
-
-    return response.data;
+    return { success: true, survey };
   } catch (error: any) {
-    console.error('Failed to get n8n execution status:', error.message);
-    return null;
-  }
-};
-
-/**
- * Cancel n8n workflow execution
- */
-export const cancelWorkflowExecution = async (
-  executionId: string
-): Promise<boolean> => {
-  try {
-    const apiUrl = `${config.n8n.url}/api/v1/executions/${executionId}/stop`;
-    const apiKey = config.n8n.apiKey;
-
-    if (!apiKey) {
-      console.warn('n8n API key not configured');
-      return false;
-    }
-
-    await axios.post(
-      apiUrl,
-      {},
-      {
-        headers: {
-          'X-N8N-API-KEY': apiKey,
-        },
-        timeout: 5000,
-      }
-    );
-
-    console.log('n8n workflow execution cancelled:', executionId);
-    return true;
-  } catch (error: any) {
-    console.error('Failed to cancel n8n execution:', error.message);
-    return false;
+    const message =
+      error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT'
+        ? 'n8n service not reachable'
+        : error.response?.data?.message || error.message || 'Unknown n8n error';
+    console.error('n8n workflow trigger failed:', message);
+    return { success: false, error: message };
   }
 };

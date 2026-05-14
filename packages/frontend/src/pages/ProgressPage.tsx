@@ -1,23 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-
-interface WorkflowStatus {
-  executionId: string;
-  status: string;
-  currentStage?: string;
-  progress: number;
-  message: string;
-  error?: {
-    stage: string;
-    message: string;
-    retryable: boolean;
-  };
-}
+import { apiClient, WorkflowStatusResponse } from '../api/client';
 
 export default function ProgressPage() {
   const { executionId } = useParams<{ executionId: string }>();
   const navigate = useNavigate();
-  const [status, setStatus] = useState<WorkflowStatus | null>(null);
+  const [status, setStatus] = useState<WorkflowStatusResponse | null>(null);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
@@ -25,20 +13,12 @@ export default function ProgressPage() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`http://localhost:3000/api/surveys/${executionId}/status`);
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch status');
-        }
-
-        const data = await response.json();
+        const data = await apiClient.getSurveyStatus(executionId);
         setStatus(data);
 
-        // Navigate to survey page when complete
-        if (data.status === 'complete') {
-          setTimeout(() => {
-            navigate(`/survey/${executionId}`);
-          }, 2000);
+        if (data.status === 'complete' && data.surveyId) {
+          const target = data.surveyId;
+          setTimeout(() => navigate(`/survey/${target}`), 1500);
         }
       } catch (err) {
         setError('Failed to fetch workflow status');
